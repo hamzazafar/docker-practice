@@ -1,0 +1,140 @@
+The following steps create three services:
+* app: contains the flask app 
+* redis-master
+* redis-slave
+
+1- Clone the flask app.
+   - git clone https://repo.simscale.com/tchaudhry/unstable-hasher-external
+
+2- Create docker hub account and log into it!
+   - docker login -u hamza100 -p <XXX>
+
+3- Write the Dockerfile
+
+------------------------------------
+FROM ubuntu:14.04
+MAINTAINER hamza zafar
+RUN mkdir /home/code
+RUN apt-get update \
+    && apt-get install -y \
+    python2.7 \
+    curl \
+    python-pip
+WORKDIR /home/code
+COPY main.py .
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+CMD ["python2", "main.py"]
+------------------------------------
+
+4- Build Image
+   - sudo docker build -t simscale-app .
+
+5- Tag the image
+   - sudo docker tag <image-id> <docker-hub-username>/<image-name>:<version>
+
+6- Push image to public repo
+   - sudo docker push hamza100/simscale-app
+
+   Remove Image from local repo:
+   - sudo docker rmi -f 7041375abb84
+ 
+   Pull Image from remote repo:
+   - sudo docker pull hamza100/simscale-app
+
+   Image is now available in local repo
+
+7- Run container
+   sudo docker run -it hamza100/simscale-app curl  (CREATE + START)
+
+8- Use Redis Master/Slave image from bitnami/redis
+   Create a Health Check script:
+   ----------------------------------------------------------------------
+   #!/bin/bash
+   set -eo pipefail
+
+   host="$(hostname --ip-address)"
+
+   if ping="$(redis-cli -h "$host" ping)" && [ "$ping" = 'PONG' ]; then
+        exit 0
+   fi
+
+   exit 1
+
+   ----------------------------------------------------------------------
+
+   Use the following dockerfile to create a new redis image and push to repo
+ 
+   ----------------------------------------------------------------------
+   FROM bitnami/redis:latest
+   COPY redis-healthcheck.sh /usr/local/bin/
+   ----------------------------------------------------------------------
+
+9- Bring up a docker swarm, 1 manager, 2 workers
+    First install virtualbox `sudo apt-get install virtualbox`
+
+    - Steps for Manager
+      - Create the machine
+        sudo docker-machine create manager
+      - Get IP of manager machine
+        sudo docker-machine ip manager
+        192.168.99.100
+      - SSH into manager machine
+        sudo docker-machine ssh manager
+      - Set this machine as Swarm Manager 
+        docker swarm init --advertise-addr 192.168.99.100
+        ---------------------------------------------------------------------
+        Swarm initialized: current node (iqmsn27xk928xdge8w0sv70xm) is now a 
+        manager.
+
+        To add a worker to this swarm, run the following command:
+
+        docker swarm join \
+        --token SWMTKN-1-5meloto93hiipt56eatbwchflnhqwlh9o1js1i9ls3qcmt2ztq-
+        bpr9qjxz6htc7ctkgmsg0df7y \
+        192.168.99.100:2377
+
+        To add a manager to this swarm, run 'docker swarm join-token manager' 
+        and follow the instructions.
+        ---------------------------------------------------------------------
+
+
+    - Steps for Worker machines
+      - Create the machine
+        sudo docker-machine create worker-0 
+      - SSH into manager machine
+        sudo docker-machine ssh worker-0
+      - Run the join command provided by manager:
+        docker swarm join --token SWMTKN-1-5meloto93hiipt56eatbwchflnhqwlh9o1j
+        s1i9ls3qcmt2ztq-bpr9qjxz6htc7ctkgmsg0df7y  192.168.99.100:2377
+        This node joined a swarm as a worker.
+       
+    - Login to the swarm manager and run docker node ls
+
+ID                           HOSTNAME  STATUS  AVAILABILITY  MANAGER STATUS
+7ivko97xbiqjleoo8v6br0nfb    worker-0  Ready   Active        
+iqmsn27xk928xdge8w0sv70xm *  manager   Ready   Active        Leader
+
+      The swarm nodes are verified now!
+
+10- Writing docker compose:
+    See the docker-compose.yml file
+
+      sudo docker-machine scp docker-compose.yml manager:docker-compose.yml
+    - Log into the manager machine
+      sudo docker-machine ssh manager
+    - Deploy the stack:
+      sudo docker stack deploy --compose-file docker-compose.yml myStack
+    - Check status of services
+      sudo docker stack services myStack 
+
+ID            NAME                  MODE        REPLICAS  IMAGE
+5xzofx92vb67  myStack_app           replicated  0/4       hamza100/simscale-app:latest
+qz3u34ibotbo  myStack_redis-master  replicated  0/1       hamza100/redis:latest
+r8d6osak4q62  myStack_redis-slave   replicated  0/4       hamza100/redis:latest      
+
+11- check on browser <manager-ip>:5000/hash?string=hello
+12- Verify key is stored in Redis
+    sudo docker exec -it <container-id> redis-cli get hello
+
+13- Centralized Logging???

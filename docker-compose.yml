@@ -1,0 +1,118 @@
+version: '3'
+services:
+  app:
+    container_name: app-container
+    image: hamza100/simscale-app:latest
+    ports:
+      - 5000:5000
+    depends_on:
+      - redis-master
+    environment:
+      - REDIS_ENABLED=True
+      - REDIS_SERVER=redis-master
+    networks:
+      - net
+    deploy:
+      mode: replicated 
+      replicas: 4
+      placement:
+        constraints: [node.role == worker]
+      update_config:
+        parallelism: 2
+        delay: 5s
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits: 
+          cpus: '1'
+          memory: '50M'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  
+  redis-master:
+    container_name: redis-master-container
+    image: hamza100/redis:latest
+    ports:
+        - 6379
+    environment:
+      - REDIS_REPLICATION_MODE=master
+    volumes:
+      - redis:/bitnami/redis
+    networks:
+      - net
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      update_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: '1'
+          memory: '100M'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "/bin/bash", "redis-healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis-slave:
+    container_name: 'redis-slave-container'
+    image: hamza100/redis:latest
+    ports: 
+      - '6379'
+    depends_on:
+      - redis-master
+    environment:
+      - REDIS_REPLICATION_MODE=slave
+      - REDIS_MASTER_HOST=redis-master
+      - REDIS_MASTER_PORT=6379
+    networks:
+      - net
+    deploy:
+      mode: replicated
+      replicas: 4
+      placement:
+        constraints: [node.role == worker]
+      update_config:
+        parallelism: 2
+        delay: 5s
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: '1'
+          memory: '50M'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "/bin/bash", "redis-healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  net:
+
+volumes:                                                         
+  redis:
