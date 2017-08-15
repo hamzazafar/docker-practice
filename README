@@ -138,3 +138,6 @@ r8d6osak4q62  myStack_redis-slave   replicated  0/4       hamza100/redis:latest
     sudo docker exec -it <container-id> redis-cli get hello
 
 13- Centralized Logging???
+
+//remove all stopped containers
+sudo docker rm $(sudo docker ps -aq)
